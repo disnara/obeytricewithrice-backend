@@ -28,6 +28,8 @@ API_CONFIG = {
         "base_url": "https://api.clash.gg/affiliates/detailed-summary/v2",
         "auth_token": os.environ.get("CLASH_API_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoicGFzcyIsInNjb3BlIjoiYWZmaWxpYXRlcyIsInVzZXJJZCI6MzYxNTM5MSwiaWF0IjoxNzYyMDgzNjU2LCJleHAiOjE5MTk4NzE2NTZ9.f5xbD1m3bgMlgAsjzh2-IcdMOFpNvumTGbCYHxSSS14"),
         "cookie": "let-me-in=top-secret-cookie-do-not-share",
+        "start_date": "2026-02-02",
+        "end_date": "2026-02-16 19:00:00",
         "prize_pool": 700,
         "currency": "gems",
         "prizes": [
@@ -57,9 +59,8 @@ API_CONFIG = {
     "csbattle": {
         "url": "https://api.csbattle.com/leaderboards/affiliates",
         "affiliate_id": os.environ.get("CSBATTLE_AFFILIATE_ID", "361eff9a-d63b-4f19-9b31-883c960c020d"),
-        "start_date": os.environ.get("CSBATTLE_START_DATE", "2026-02-01 00:00:00"),
-        "end_date": os.environ.get("CSBATTLE_END_DATE", "2026-02-18 20:30:00"),
-        "fetch_end_date": "2026-02-05 23:59:59",
+        "start_date": "2026-02-02 18:30:00",
+        "end_date": "2026-02-18 19:30:00",
         "prize_pool": 600,
         "currency": "coins",
         "prizes": [
@@ -102,7 +103,8 @@ async def fetch_clash_data() -> Dict[str, Any]:
     config = API_CONFIG["clash"]
     try:
         now = datetime.now(timezone.utc)
-        start_date = now.replace(day=1).strftime("%Y-%m-%d")
+        # Use configured start date
+        start_date = config.get("start_date", "2026-02-02")
         url = f"{config['base_url']}/{start_date}"
         
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -135,10 +137,13 @@ async def fetch_clash_data() -> Dict[str, Any]:
                     "prize": prize
                 })
             
-            if now.month == 12:
-                end_of_month = now.replace(year=now.year + 1, month=1, day=1) - timedelta(seconds=1)
-            else:
-                end_of_month = now.replace(month=now.month + 1, day=1) - timedelta(seconds=1)
+            # Use configured end date for countdown (16.02.2026 20:00 CET = 19:00 UTC)
+            countdown_end = None
+            try:
+                end_date_str = config.get("end_date", "2026-02-16 19:00:00")
+                countdown_end = datetime.strptime(end_date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat()
+            except:
+                pass
             
             return {
                 "site_id": "clash",
@@ -147,7 +152,7 @@ async def fetch_clash_data() -> Dict[str, Any]:
                 "prize_pool": config["prize_pool"],
                 "currency": config["currency"],
                 "prizes": config["prizes"],
-                "countdown_end": end_of_month.isoformat(),
+                "countdown_end": countdown_end,
                 "status": "active",
                 "last_updated": now.isoformat()
             }
@@ -250,9 +255,13 @@ async def fetch_csbattle_data() -> Dict[str, Any]:
     config = API_CONFIG["csbattle"]
     
     try:
-        start_date = config.get("start_date", "2026-02-01 00:00:00")
-        fetch_end_date = config.get("fetch_end_date", "2026-02-05 23:59:59")
-        countdown_end_date = config.get("end_date", "2026-02-18 20:30:00")
+        # CSBattle: Start 02.02.2026 19:30 CET (18:30 UTC) - End 18.02.2026 20:30 CET (19:30 UTC)
+        start_date = config.get("start_date", "2026-02-02 18:30:00")
+        end_date = config.get("end_date", "2026-02-18 19:30:00")
+        
+        # Get current time to use as fetch end date (to get current data)
+        now = datetime.now(timezone.utc)
+        fetch_end_date = now.strftime("%Y-%m-%d %H:%M:%S")
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
@@ -286,7 +295,7 @@ async def fetch_csbattle_data() -> Dict[str, Any]:
             
             countdown_end = None
             try:
-                countdown_end = datetime.strptime(countdown_end_date, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat()
+                countdown_end = datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat()
             except:
                 pass
             
@@ -299,7 +308,7 @@ async def fetch_csbattle_data() -> Dict[str, Any]:
                 "prizes": config["prizes"],
                 "countdown_end": countdown_end,
                 "status": "active",
-                "last_updated": datetime.now(timezone.utc).isoformat()
+                "last_updated": now.isoformat()
             }
     except Exception as e:
         logger.error(f"Error fetching CSBattle data: {e}")
