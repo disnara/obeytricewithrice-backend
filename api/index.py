@@ -553,9 +553,17 @@ async def update_user_settings(settings: UserSettingsUpdate, request: Request):
     if validation_errors:
         raise HTTPException(status_code=400, detail={"errors": validation_errors})
     
-    # Calculate total tickets (1 ticket per 20 wagered)
-    total_wagered = wagers["clash"] + wagers["csbattle"] + wagers["skinfans"]
-    total_tickets = math.floor(total_wagered / 20)
+    # Normalize wagers to common currency before calculating tickets
+    # Clash.gg: divide by 100 (API returns gems * 100)
+    # CSBattle: already in USD (no conversion)
+    # Skin.fans: divide by 1.4 (1.4 coins = $1)
+    clash_normalized = wagers["clash"] / 100
+    csbattle_normalized = wagers["csbattle"]  # Already USD
+    skinfans_normalized = wagers["skinfans"] / 1.4 if wagers["skinfans"] > 0 else 0
+    
+    # Calculate total tickets (1 ticket per 20 USD wagered)
+    total_normalized = clash_normalized + csbattle_normalized + skinfans_normalized
+    total_tickets = math.floor(total_normalized / 20)
     
     # Update user
     users_collection.update_one(
@@ -648,9 +656,17 @@ async def refresh_tickets(request: Request):
             except Exception as e:
                 logger.error(f"Skinfans refresh error: {e}")
     
-    # Calculate total tickets
-    total_wagered = wagers["clash"] + wagers["csbattle"] + wagers["skinfans"]
-    total_tickets = math.floor(total_wagered / 20)
+    # Normalize wagers to common currency before calculating tickets
+    # Clash.gg: divide by 100 (API returns gems * 100)
+    # CSBattle: already in USD (no conversion)
+    # Skin.fans: divide by 1.4 (1.4 coins = $1)
+    clash_normalized = wagers["clash"] / 100
+    csbattle_normalized = wagers["csbattle"]  # Already USD
+    skinfans_normalized = wagers["skinfans"] / 1.4 if wagers["skinfans"] > 0 else 0
+    
+    # Calculate total tickets (1 ticket per 20 USD wagered)
+    total_normalized = clash_normalized + csbattle_normalized + skinfans_normalized
+    total_tickets = math.floor(total_normalized / 20)
     
     # Update user
     users_collection.update_one(
