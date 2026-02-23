@@ -705,16 +705,25 @@ async def get_raffle_info():
 @app.get("/api/raffle/leaderboard")
 async def get_raffle_leaderboard(limit: int = 10, offset: int = 0):
     """Get raffle leaderboard (top users by tickets)"""
+    # Exclude raffle-banned users
+    query = {
+        "total_tickets": {"$gt": 0},
+        "$or": [
+            {"bans.raffle_banned": {"$exists": False}},
+            {"bans.raffle_banned": False}
+        ]
+    }
+    
     users = list(users_collection.find(
-        {"total_tickets": {"$gt": 0}},
+        query,
         {"_id": 0, "discord_id": 1, "username": 1, "avatar": 1, "total_tickets": 1}
     ).sort("total_tickets", -1).skip(offset).limit(limit))
     
-    total_count = users_collection.count_documents({"total_tickets": {"$gt": 0}})
+    total_count = users_collection.count_documents(query)
     
-    # Calculate total tickets for win percentage
+    # Calculate total tickets for win percentage (excluding banned users)
     pipeline = [
-        {"$match": {"total_tickets": {"$gt": 0}}},
+        {"$match": query},
         {"$group": {"_id": None, "total": {"$sum": "$total_tickets"}}}
     ]
     total_result = list(users_collection.aggregate(pipeline))
@@ -1064,6 +1073,8 @@ async def admin_ban_user(discord_id: str, ban_request: AdminBanRequest, request:
         bans["skinfans"] = True
     elif ban_request.ban_type == "login":
         bans["login_banned"] = True
+    elif ban_request.ban_type == "raffle":
+        bans["raffle_banned"] = True
     elif ban_request.ban_type in ["clash", "csbattle", "skinfans"]:
         bans[ban_request.ban_type] = True
     else:
@@ -1094,14 +1105,25 @@ async def admin_unban_user(discord_id: str, ban_request: AdminBanRequest, reques
     bans = user.get("bans", {})
     
     if ban_request.ban_type == "all_sites":
+        # Clear all bans including login_banned and raffle_banned
         bans["all_sites"] = False
         bans["clash"] = False
         bans["csbattle"] = False
         bans["skinfans"] = False
+        bans["login_banned"] = False
+        bans["raffle_banned"] = False
+        # Clear ban metadata
+        bans["banned_by"] = None
+        bans["banned_at"] = None
+        bans["ban_reason"] = None
     elif ban_request.ban_type == "login":
         bans["login_banned"] = False
+    elif ban_request.ban_type == "raffle":
+        bans["raffle_banned"] = False
     elif ban_request.ban_type in ["clash", "csbattle", "skinfans"]:
         bans[ban_request.ban_type] = False
+    else:
+        raise HTTPException(status_code=400, detail="Invalid ban type")
     
     users_collection.update_one(
         {"discord_id": discord_id},
